@@ -1,0 +1,10 @@
+{
+  "FileDescription":  "Privacy-Focused Desktop Browser",
+  "ProductName":      "LOCRIUM",
+  "CompanyName":      "Locrium Technologies",
+  "LegalCopyright":   "Copyright © 2025 Locrium Technologies",
+  "LegalTrademarks":  "LOCRIUM is a trademark of Locrium Technologies",
+  "OriginalFilename": "Locrium.exe",
+  "InternalName":     "Locrium",
+  "Comments":         "Built with Electron. No telemetry, no tracking."
+}
