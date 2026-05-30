@@ -1,0 +1,400 @@
+# LOCRIUM
+
+A privacy-focused, lightweight Chromium-based desktop browser built with Electron.
+
+Dark mode by default. SearXNG as the default search engine. No telemetry, no cloud accounts, no tracking.
+
+---
+
+## Project Structure
+
+```
+LOCRIUM/
+├── src/
+│   ├── main.js                       ← Electron main process (tabs, IPC, security, service lifecycle)
+│   ├── preload.js                    ← Safe contextBridge API exposed as window.locrium
+│   ├── content-preload.js            ← Minimal preload for BrowserView page content
+│   ├── main/
+│   │   ├── searchServiceManager.js   ← In-process HTTP search service (127.0.0.1:8080)
+│   │   ├── searchServiceUpdater.js   ← Checks/applies search service updates
+│   │   └── browserUpdater.js        ← Browser auto-update via electron-updater
+│   └── renderer/
+│       ├── index.html               ← Browser chrome UI (tabs, nav, panels)
+│       ├── style.css                ← Dark-mode-first styles
+│       └── app.js                   ← Renderer logic (tabs, panels, health panel)
+├── resources/
+│   └── blocklist.txt                ← Domain blocklist for ad/tracker filtering
+├── build/
+│   └── icon.ico                     ← App icon (LOCRIUM branded, multi-resolution)
+├── package.json                     ← Scripts, electron-builder config, publish config
+└── README.md                        ← This file
+```
+
+---
+
+## Local Search Service
+
+LOCRIUM bundles a lightweight local search service that runs as part of the Electron main process.
+
+### Architecture
+
+| Property | Value |
+|---|---|
+| Address | `127.0.0.1:8080` (loopback only — not exposed to LAN) |
+| Protocol | HTTP/1.1 |
+| Process model | In-process Node.js `http.Server` (no Docker, no Python, no WSL required) |
+| Lifecycle | Started when the browser launches, stopped gracefully when it exits |
+
+### Endpoints
+
+| Endpoint | Description |
+|---|---|
+| `GET /` | Local search home page |
+| `GET /search?q=<query>` | HTML search results page |
+| `GET /search?q=<query>&format=json` | JSON search results |
+| `GET /api/search?q=<query>` | JSON search results (programmatic) |
+| `GET /health` | JSON health status |
+
+### MVP vs Full SearXNG
+
+The bundled MVP search service returns placeholder results that link out to DuckDuckGo, Wikipedia, and GitHub. To replace it with a real SearXNG backend:
+
+1. Bundle SearXNG (Python) or a standalone SearXNG binary in `resources/`.
+2. Update `searchServiceManager.js` `start()` to spawn the subprocess instead of creating an in-process HTTP server.
+3. Proxy requests through to SearXNG's endpoints.
+4. Note: SearXNG is AGPL-3.0 licensed — review distribution obligations at https://searxng.org/license
+
+### Health Panel
+
+Click the **🔌** (plug) button in the top-right navigation bar to open the Health & Search Service panel. From there you can:
+
+- View real-time service status (running / stopped, port, version, uptime)
+- Start, stop, or restart the search service manually
+- Run a live health check (HTTP ping to `/health`)
+- Check for browser and search service updates
+- View browser version info (Electron, Chromium, Node.js)
+
+---
+
+## Quick Start (Windows)
+
+### 1. Prerequisites
+
+- **Node.js** v18 or higher: https://nodejs.org/
+- **Git** (optional): https://git-scm.com/
+- Windows 10 or 11 (64-bit)
+
+### 2. Install dependencies
+
+Open a terminal (Command Prompt or PowerShell) in the `LOCRIUM/` folder:
+
+```cmd
+npm install
+```
+
+This downloads Electron and all dependencies. Takes 1–3 minutes first time.
+
+### 3. Run in development mode
+
+```cmd
+npm start
+```
+
+The browser window opens immediately. No build step needed.
+
+### 4. Build the Windows installer and portable EXE
+
+```cmd
+npm run build:release
+```
+
+Output is placed in `dist/`. You'll always find exactly:
+- `LocriumSetup.exe` — NSIS installer (recommended for distribution)
+- `Locrium.exe` — Portable executable (no install required)
+
+### 5. Build individual targets
+
+```cmd
+npm run build:installer   # NSIS installer only
+npm run build:portable    # Portable EXE only
+npm run build:unpack      # Unpacked directory (for testing without installer)
+```
+
+---
+
+## Release Workflow
+
+Follow these steps for every public release:
+
+### Step 1 — Bump the version
+
+```cmd
+npm run version:patch     # 1.0.0 → 1.0.1  (bug fix)
+npm run version:minor     # 1.0.0 → 1.1.0  (new feature)
+npm run version:major     # 1.0.0 → 2.0.0  (breaking change)
+```
+
+This updates `package.json`, creates a git commit, and tags the release (e.g. `v1.0.1`).
+To skip the git tag: `node scripts/version-bump.js patch --no-tag`
+
+### Step 2 — Build the release artefacts
+
+```cmd
+npm run build:release
+```
+
+Both output files are written to `dist/` with consistent names regardless of version:
+
+| File | Type |
+|------|------|
+| `dist/LocriumSetup.exe` | NSIS installer |
+| `dist/Locrium.exe` | Portable EXE |
+
+The EXE metadata embedded in both files (visible in Windows → Properties → Details):
+
+| Field | Value |
+|-------|-------|
+| Product Name | LOCRIUM |
+| Company Name | Locrium Technologies |
+| File Description | Privacy-Focused Desktop Browser |
+| Version | Matches `package.json` |
+
+### Step 3 — Sign the artefacts (optional but recommended)
+
+Code signing reduces SmartScreen and Smart App Control warnings. You need a valid
+Authenticode certificate (EV certificates build reputation fastest).
+
+**Option A — Automatic signing during build:**
+
+Set the environment variables before running `build:release`:
+
+```cmd
+set LOCRIUM_CERT_PATH=C:\certs\locrium.pfx
+set LOCRIUM_CERT_PASS=YourCertPassword
+npm run build:release
+```
+
+`electron-builder` will call `scripts/sign.js` automatically for each binary.
+If `LOCRIUM_CERT_PATH` is not set, the build proceeds unsigned without error.
+
+**Option B — Manual signing after build:**
+
+```cmd
+set LOCRIUM_CERT_PATH=C:\certs\locrium.pfx
+set LOCRIUM_CERT_PASS=YourCertPassword
+scripts\sign.bat
+```
+
+Or via Node (cross-platform):
+
+```cmd
+npm run sign
+```
+
+Both options call `signtool.exe` with SHA-256 + RFC 3161 timestamp
+(`http://timestamp.digicert.com`) and verify the signature afterwards.
+
+> **Security note:** Never commit `LOCRIUM_CERT_PATH` or `LOCRIUM_CERT_PASS` to
+> source control. Keep your PFX file off the build machine when not in use.
+
+### Step 4 — Distribute
+
+Upload `dist/LocriumSetup.exe` and `dist/Locrium.exe` to your distribution channel
+(GitHub Releases, website, etc.).
+
+### Smart App Control notes
+
+Windows Smart App Control and SmartScreen build reputation per publisher over time.
+To build reputation as quickly as possible:
+
+- Use a consistent `appId` (`com.locrium.browser`) — already set
+- Use the same code-signing certificate for every release
+- Use an EV (Extended Validation) certificate if budget allows — EV certificates
+  immediately establish SmartScreen reputation without requiring multiple installs
+- Keep the `productName`, `companyName`, and `executableName` identical across releases
+
+---
+
+---
+
+## Features
+
+### Core browsing
+- Multiple tabs with close/new tab controls
+- Back, forward, reload, stop, home buttons
+- Address bar that auto-detects URLs vs. search queries
+- Tab title and favicon updates
+- Loading progress indicator
+- `target="_blank"` links open in new tabs
+
+### Search
+- Default search engine: **SearXNG** at `http://localhost:8080`
+- Change the URL in Settings → Search Engine
+- Plain text typed in address bar becomes a SearXNG search query
+
+### Privacy
+- Built-in tracker/ad domain blocklist (`resources/blocklist.txt`)
+- Private / incognito tabs (isolated in-memory session)
+- Block third-party cookies toggle
+- JavaScript enable/disable per new tab
+- Image loading enable/disable per new tab
+- Clear browsing data: cookies, cache, local storage, history
+- No analytics, no crash reporting, no cloud sync
+- Chromium anti-telemetry flags set at startup
+
+### Security
+- `contextIsolation: true`, `nodeIntegration: false`, `sandbox: true` on all views
+- Preload script exposes only a safe, narrow API via `contextBridge`
+- Permissions (camera, microphone, geolocation, notifications) are **denied by default**
+- Sensitive permissions prompt the user before allowing
+- Navigation to `javascript:` URLs is blocked in BrowserViews
+- No navigation allowed from the renderer window itself
+
+### UI
+- Dark mode by default (toggle in Settings)
+- Clean, minimal browser chrome
+- Tabs on top, nav bar below
+- Bookmarks bar with up to 20 pinned sites
+- Settings, History, Downloads, Bookmarks panels (slide-in from right)
+- Notice bar for status messages
+
+### Downloads
+- File save dialog on every download
+- Download progress bar
+- "Open" and "Show in Folder" buttons for completed downloads
+- Configurable download folder
+
+### Keyboard shortcuts
+
+| Shortcut        | Action              |
+|-----------------|---------------------|
+| `Ctrl+T`        | New tab             |
+| `Ctrl+W`        | Close tab           |
+| `Ctrl+Shift+N`  | New private tab     |
+| `Ctrl+L`        | Focus address bar   |
+| `F5` / `Ctrl+R` | Reload              |
+| `Alt+Left`      | Back                |
+| `Alt+Right`     | Forward             |
+| `Ctrl++`        | Zoom in             |
+| `Ctrl+-`        | Zoom out            |
+| `Ctrl+0`        | Reset zoom          |
+| `F12`           | Toggle DevTools     |
+| `Escape`        | Close panels        |
+
+---
+
+## Customization
+
+### Change the browser name
+
+1. Open `package.json`
+2. Change `"productName": "LOCRIUM"` to your name
+3. Change `"appId"` to something unique like `"com.yourdomain.yourbrowser"`
+4. Change `"shortcutName"` in the `nsis` block
+
+### Change the default homepage
+
+Open Settings panel in the browser, or edit `package.json`:
+```json
+// In electron-store defaults in src/main.js:
+homepage: 'https://your-homepage.com'
+```
+
+### Change the SearXNG URL
+
+In the browser: Settings → Search Engine URL
+
+Or in `src/main.js`, in the `settingsStore` defaults:
+```js
+searxngUrl: 'http://your-searxng-host:8080'
+```
+
+### Replace the app icon
+
+LOCRIUM ships with a branded default icon (`build/icon.ico`) containing all standard Windows sizes (16×16, 32×32, 48×48, 128×128, and 256×256). To use your own icon:
+
+1. Create a multi-resolution `.ico` file (256×256 minimum; include 16, 32, 48, 128, and 256 px for best results)
+2. Replace `build/icon.ico` with your file (keep the same filename)
+3. Rebuild: `npm run build:release`
+
+Free online ICO converters: https://www.icoconverter.com/
+
+### Update the ad/tracker blocklist
+
+Edit `resources/blocklist.txt`. One domain per line. Lines starting with `#` are comments.
+
+For a full list, download from:
+- https://github.com/StevenBlack/hosts (use the "domains-only" format)
+- https://easylist.to/easylist/easylist.txt (requires parsing for domains only)
+
+### Change the default dark/light mode
+
+In `src/main.js`, find `settingsStore` defaults:
+```js
+darkMode: true,  // set to false for light mode default
+```
+
+---
+
+## Data Storage
+
+All data is stored locally in your Windows user profile:
+
+| Data       | Location                                     |
+|------------|----------------------------------------------|
+| Settings   | `%APPDATA%\locrium\settings.json`       |
+| Bookmarks  | `%APPDATA%\locrium\bookmarks.json`      |
+| History    | `%APPDATA%\locrium\history.json`        |
+| Downloads  | `%APPDATA%\locrium\downloads.json`      |
+
+No data is sent anywhere. No account required.
+
+---
+
+## Electron Limitations vs. Chrome
+
+| Feature                   | Chrome              | LOCRIUM (Electron)              |
+|---------------------------|---------------------|--------------------------------------|
+| Extensions                | Full Web Store      | Not supported (would need custom API)|
+| PDF viewing               | Built-in            | Requires plugin or workaround        |
+| Print                     | Full support        | Basic (Electron print API)           |
+| DRM content (Netflix)     | Supported           | Requires Widevine CDM, not included  |
+| Hardware video decoding   | Full                | Depends on Electron build flags      |
+| Sync across devices       | Google Account      | Not available (by design)            |
+| Update mechanism          | Auto-update         | Manual rebuild                       |
+| Memory usage              | Optimized           | Higher (Electron overhead ~100MB)    |
+| Chromium version          | Latest              | Tied to Electron release             |
+| Safe Browsing             | Google-backed       | Disabled (privacy choice)            |
+| Push notifications        | Full                | Blocked by default (privacy choice)  |
+
+---
+
+## TODO / Future extensions
+
+- [ ] Reader mode (strip ads, clean article view)
+- [ ] Per-tab JavaScript toggle via session recreation
+- [ ] Extension API (would require significant architecture work)
+- [ ] Sync bookmarks via local network (e.g. Syncthing)
+- [ ] RSS reader integration
+- [ ] Keyboard-driven navigation (Vimium-style)
+- [ ] Full EasyList integration parser
+- [ ] Auto-update via electron-updater
+- [ ] Password manager (local, encrypted)
+- [ ] Tab grouping
+- [ ] Sidebar (pinned sites / notes)
+
+---
+
+## Development Notes
+
+- The renderer (`src/renderer/`) has no access to Node.js APIs — security is enforced by contextIsolation
+- All renderer-to-main communication goes through `window.locrium` (the contextBridge API in `preload.js`)
+- BrowserViews are used for tab content, not `<webview>` tags (more secure and performant)
+- The blocklist is loaded from disk at startup — you can hot-reload it by restarting the app
+- Settings are persisted via `electron-store`, which writes to JSON files in `%APPDATA%`
+
+---
+
+## License
+
+MIT — use, fork, and modify freely.
