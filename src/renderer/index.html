@@ -1,0 +1,706 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy"
+    content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data: https:;" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LOCRIUM</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body class="dark">
+
+  <!-- ── Title bar / window drag area ── -->
+  <div id="titlebar">
+    <div id="titlebar-brand">
+      <span class="brand-shield">&#128737;</span>
+      <span class="brand-name">LOCRIUM</span>
+      <span class="brand-tagline">Privacy Browser</span>
+    </div>
+    <div id="titlebar-drag"></div>
+    <div id="window-controls">
+      <button id="btn-minimize" title="Minimize">&#x2212;</button>
+      <button id="btn-maximize" title="Maximize">&#x25A1;</button>
+      <button id="btn-close"    title="Close">&#x2715;</button>
+    </div>
+  </div>
+
+  <!-- ── Tab bar ── -->
+  <div id="tabbar">
+    <div id="tabs-container"></div>
+    <button id="btn-new-tab" title="New Tab">+</button>
+    <button id="btn-private-tab" title="New Private Tab (Ctrl+Shift+N)">&#128274;</button>
+  </div>
+
+  <!-- ── Navigation bar ── -->
+  <div id="navbar">
+    <div id="nav-left">
+      <button id="btn-back"    class="nav-btn" title="Back (Alt+Left)"    disabled>&#8592;</button>
+      <button id="btn-forward" class="nav-btn" title="Forward (Alt+Right)" disabled>&#8594;</button>
+      <button id="btn-reload"  class="nav-btn" title="Reload (F5)">&#10227;</button>
+      <button id="btn-home"    class="nav-btn" title="Home">&#8962;</button>
+    </div>
+
+    <div id="address-bar-wrap">
+      <span id="lock-icon" title="Connection status">&#128275;</span>
+      <button id="btn-site-shield" class="site-shield-btn" title="Per-site privacy controls">&#128737;</button>
+      <span id="incognito-badge" class="badge hidden">&#128274; Private</span>
+      <input id="address-bar" type="text" placeholder="Search or enter address…" autocomplete="off" spellcheck="false" />
+      <button id="btn-bookmark" title="Bookmark this page">&#9734;</button>
+    </div>
+
+    <div id="nav-right">
+      <button id="btn-zoom-out"  class="nav-btn" title="Zoom out">&#8722;</button>
+      <button id="btn-zoom-in"   class="nav-btn" title="Zoom in">&#43;</button>
+      <button id="btn-high-security" class="nav-btn icon-btn" title="High Security Mode — instant toggle">&#128274;</button>
+      <button id="btn-theme-toggle"  class="nav-btn icon-btn" title="Toggle dark/light mode">&#127769;</button>
+      <span id="search-svc-badge" class="search-svc-badge search-svc-badge--unknown" title="Local search service status">&#9679; &hellip;</span>
+      <button id="btn-downloads" class="nav-btn icon-btn" title="Downloads">&#8681;</button>
+      <button id="btn-history"   class="nav-btn icon-btn" title="History">&#128336;</button>
+      <button id="btn-bookmarks-panel" class="nav-btn icon-btn" title="Bookmarks">&#9734;</button>
+      <button id="btn-privacy"   class="nav-btn icon-btn" title="Privacy &amp; Anti-Fingerprinting">&#128737;</button>
+      <button id="btn-health"     class="nav-btn icon-btn" title="Search Service &amp; Health">&#128268;</button>
+      <button id="btn-converter" class="nav-btn icon-btn" title="Convert to Markdown">&#128196;</button>
+      <button id="btn-settings"  class="nav-btn icon-btn" title="Settings">&#9881;</button>
+    </div>
+  </div>
+
+  <!-- ── Per-site privacy popover ── -->
+  <div id="site-privacy-popover" class="site-popover hidden">
+    <div class="site-popover-header">
+      <span class="site-popover-icon">&#128737;</span>
+      <span id="site-popover-host" class="site-popover-host">—</span>
+      <button id="site-popover-close" class="site-popover-close">&#x2715;</button>
+    </div>
+    <div class="site-popover-body">
+      <label class="site-toggle-row">
+        <span class="site-toggle-label">Disable JavaScript</span>
+        <div class="toggle-switch"><input id="sp-disable-js" type="checkbox" /><span class="toggle-knob"></span></div>
+      </label>
+      <label class="site-toggle-row">
+        <span class="site-toggle-label">Block Cookies</span>
+        <div class="toggle-switch"><input id="sp-block-cookies" type="checkbox" /><span class="toggle-knob"></span></div>
+      </label>
+      <label class="site-toggle-row">
+        <span class="site-toggle-label">Block Trackers</span>
+        <div class="toggle-switch"><input id="sp-block-trackers" type="checkbox" /><span class="toggle-knob"></span></div>
+      </label>
+      <div class="site-ua-row">
+        <span class="site-toggle-label">Spoof User-Agent</span>
+        <select id="sp-spoof-ua" class="site-ua-select">
+          <option value="">— Off (default) —</option>
+          <option value="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36">Chrome 120 Windows</option>
+          <option value="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36">Chrome 120 macOS</option>
+          <option value="Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0">Firefox 121 Windows</option>
+          <option value="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36">Chrome 120 Linux</option>
+        </select>
+      </div>
+      <button id="sp-save" class="primary-btn" style="width:100%;margin-top:8px;font-size:12px">Save for this site</button>
+    </div>
+  </div>
+
+  <!-- ── Fullscreen escape overlay ── -->
+  <div id="fullscreen-overlay" class="hidden">
+    <button id="btn-exit-fullscreen" title="Exit fullscreen (Esc)">&#x2715; Exit Fullscreen</button>
+  </div>
+
+  <!-- ── Loading progress bar ── -->
+  <div id="progress-bar"><div id="progress-fill"></div></div>
+
+  <!-- ── Bookmark bar ── -->
+  <div id="bookmarks-bar"></div>
+
+  <!-- ── Panels ── -->
+  <div id="panel-overlay" class="hidden"></div>
+
+  <!-- ══════════════════════ SETTINGS PANEL ══════════════════════ -->
+  <aside id="panel-settings" class="panel panel-settings hidden">
+    <div class="panel-header">
+      <span class="panel-header-logo">&#128737; LOCRIUM</span>
+      <span class="panel-header-sub">Settings</span>
+      <button class="panel-close" data-panel="settings">&#x2715;</button>
+    </div>
+    <div class="panel-body">
+
+      <!-- ── Search ── -->
+      <section class="settings-section">
+        <div class="section-title"><span class="section-icon">&#128270;</span> Search</div>
+
+        <div class="setting-row">
+          <div class="setting-label">Local Search Service URL</div>
+          <input id="set-searxng" type="text" class="setting-input" placeholder="http://127.0.0.1:8888" />
+          <div class="setting-hint">URL of your local LOCRIUM search service (multi-engine aggregator)</div>
+        </div>
+
+        <div class="setting-row">
+          <div class="setting-label">Service Port</div>
+          <input id="set-search-port" type="number" min="1024" max="65535" class="setting-input" placeholder="8888" style="max-width:100px" />
+          <div class="setting-hint">Port the local search service listens on (default 8888)</div>
+        </div>
+
+        <div class="setting-row">
+          <div class="setting-label">Homepage</div>
+          <input id="set-homepage" type="text" class="setting-input" placeholder="http://127.0.0.1:8888" />
+          <div class="setting-hint">Page opened when you click Home or open a new window</div>
+        </div>
+
+        <div class="health-actions" style="margin-top:4px">
+          <button id="btn-settings-svc-restart" class="small-btn">&#9654; Restart Service</button>
+          <button id="btn-settings-svc-stop"    class="small-btn">&#9632; Stop Service</button>
+          <span id="settings-svc-status" class="update-result"></span>
+        </div>
+      </section>
+
+      <!-- ── Privacy & Security ── -->
+      <section class="settings-section">
+        <div class="section-title"><span class="section-icon">&#128274;</span> Privacy &amp; Security</div>
+
+        <label class="toggle-row">
+          <div class="toggle-info">
+            <span class="toggle-label">Block trackers &amp; ads</span>
+            <span class="setting-hint">Uses built-in domain blocklist to block known ad and tracking networks</span>
+          </div>
+          <div class="toggle-switch">
+            <input id="set-block-trackers" type="checkbox" />
+            <span class="toggle-knob"></span>
+          </div>
+        </label>
+
+        <label class="toggle-row">
+          <div class="toggle-info">
+            <span class="toggle-label">Block third-party cookies</span>
+            <span class="setting-hint">Prevents cross-site tracking via cookies</span>
+          </div>
+          <div class="toggle-switch">
+            <input id="set-block-cookies" type="checkbox" />
+            <span class="toggle-knob"></span>
+          </div>
+        </label>
+
+        <label class="toggle-row">
+          <div class="toggle-info">
+            <span class="toggle-label">Send Do Not Track (DNT)</span>
+            <span class="setting-hint">Sends DNT: 1 header with every request, asking sites not to track you</span>
+          </div>
+          <div class="toggle-switch">
+            <input id="set-dnt" type="checkbox" />
+            <span class="toggle-knob"></span>
+          </div>
+        </label>
+
+        <label class="toggle-row">
+          <div class="toggle-info">
+            <span class="toggle-label">Resist fingerprinting</span>
+            <span class="setting-hint">Strips tracking headers, normalises User-Agent, and blocks canvas/WebGL fingerprinting APIs</span>
+          </div>
+          <div class="toggle-switch">
+            <input id="set-resist-fp" type="checkbox" />
+            <span class="toggle-knob"></span>
+          </div>
+        </label>
+
+        <label class="toggle-row">
+          <div class="toggle-info">
+            <span class="toggle-label">Block WebRTC (prevent IP leaks)</span>
+            <span class="setting-hint">WebRTC can expose your real IP even through a VPN. Blocking it eliminates that risk.</span>
+          </div>
+          <div class="toggle-switch">
+            <input id="set-block-webrtc" type="checkbox" />
+            <span class="toggle-knob"></span>
+          </div>
+        </label>
+
+        <label class="toggle-row">
+          <div class="toggle-info">
+            <span class="toggle-label">Upgrade HTTP to HTTPS</span>
+            <span class="setting-hint">Automatically redirects insecure HTTP pages to HTTPS where possible</span>
+          </div>
+          <div class="toggle-switch">
+            <input id="set-force-https" type="checkbox" />
+            <span class="toggle-knob"></span>
+          </div>
+        </label>
+
+        <label class="toggle-row">
+          <div class="toggle-info">
+            <span class="toggle-label">Block mixed content</span>
+            <span class="setting-hint">Blocks HTTP resources (images, scripts) loaded on HTTPS pages</span>
+          </div>
+          <div class="toggle-switch">
+            <input id="set-block-mixed" type="checkbox" />
+            <span class="toggle-knob"></span>
+          </div>
+        </label>
+
+        <label class="toggle-row">
+          <div class="toggle-info">
+            <span class="toggle-label">Auto-deny notification requests</span>
+            <span class="setting-hint">Silently denies all website notification permission requests</span>
+          </div>
+          <div class="toggle-switch">
+            <input id="set-deny-notif" type="checkbox" />
+            <span class="toggle-knob"></span>
+          </div>
+        </label>
+
+        <label class="toggle-row">
+          <div class="toggle-info">
+            <span class="toggle-label">Auto-deny geolocation requests</span>
+            <span class="setting-hint">Silently denies all location access requests from websites</span>
+          </div>
+          <div class="toggle-switch">
+            <input id="set-deny-geo" type="checkbox" />
+            <span class="toggle-knob"></span>
+          </div>
+        </label>
+
+        <label class="toggle-row">
+          <div class="toggle-info">
+            <span class="toggle-label">Block camera &amp; microphone access</span>
+            <span class="setting-hint">Denies all media device access requests from websites</span>
+          </div>
+          <div class="toggle-switch">
+            <input id="set-block-media" type="checkbox" />
+            <span class="toggle-knob"></span>
+          </div>
+        </label>
+
+        <label class="toggle-row">
+          <div class="toggle-info">
+            <span class="toggle-label">Block media autoplay</span>
+            <span class="setting-hint">Requires a click before videos or audio play automatically</span>
+          </div>
+          <div class="toggle-switch">
+            <input id="set-block-autoplay" type="checkbox" />
+            <span class="toggle-knob"></span>
+          </div>
+        </label>
+
+        <label class="toggle-row">
+          <div class="toggle-info">
+            <span class="toggle-label">Enable JavaScript</span>
+            <span class="setting-hint">Applies to newly opened tabs. Disable for maximum privacy on untrusted sites.</span>
+          </div>
+          <div class="toggle-switch">
+            <input id="set-js" type="checkbox" />
+            <span class="toggle-knob"></span>
+          </div>
+        </label>
+
+        <label class="toggle-row">
+          <div class="toggle-info">
+            <span class="toggle-label">Load images</span>
+            <span class="setting-hint">Applies to newly opened tabs. Disabling images reduces tracking surface.</span>
+          </div>
+          <div class="toggle-switch">
+            <input id="set-images" type="checkbox" />
+            <span class="toggle-knob"></span>
+          </div>
+        </label>
+      </section>
+
+      <!-- ── Anti-Fingerprinting / Privacy Mode ── -->
+      <section class="settings-section">
+        <div class="section-title"><span class="section-icon">&#128737;</span> Anti-Fingerprinting / Privacy Mode</div>
+
+        <div class="privacy-warning-box">
+          <strong>&#9888; Important limitations</strong><br>
+          Privacy Mode reduces your fingerprinting surface but does <strong>not</strong> guarantee anonymity.
+          Some websites may break. Video, maps, 3D, and graphics-heavy pages may stop working if WebGL is blocked.
+          Protections are best-effort only and apply after page DOM load, so very early-loading scripts may not be covered.
+        </div>
+
+        <label class="toggle-row">
+          <div class="toggle-info">
+            <span class="toggle-label">Enable Privacy Mode</span>
+            <span class="setting-hint restart-note">&#9888; Master toggle — enables all anti-fingerprinting protections below and disables GPU acceleration. <strong>Requires restart to take full effect.</strong></span>
+          </div>
+          <div class="toggle-switch">
+            <input id="set-privacy-mode" type="checkbox" />
+            <span class="toggle-knob"></span>
+          </div>
+        </label>
+
+        <label class="toggle-row">
+          <div class="toggle-info">
+            <span class="toggle-label">Block WebGPU</span>
+            <span class="setting-hint">Hides <code>navigator.gpu</code> from pages. Prevents GPU model and driver fingerprinting via the WebGPU API. May break WebGPU-based graphics or compute apps.</span>
+          </div>
+          <div class="toggle-switch">
+            <input id="set-block-webgpu" type="checkbox" />
+            <span class="toggle-knob"></span>
+          </div>
+        </label>
+
+        <label class="toggle-row">
+          <div class="toggle-info">
+            <span class="toggle-label">Block WebGL</span>
+            <span class="setting-hint">Returns null for all WebGL context requests. Prevents GPU renderer/vendor fingerprinting. <strong>Will break 3D graphics, WebGL games, and some maps.</strong></span>
+          </div>
+          <div class="toggle-switch">
+            <input id="set-block-webgl" type="checkbox" />
+            <span class="toggle-knob"></span>
+          </div>
+        </label>
+
+        <label class="toggle-row">
+          <div class="toggle-info">
+            <span class="toggle-label">Resist canvas fingerprinting</span>
+            <span class="setting-hint">Adds invisible noise to canvas pixel data reads (toDataURL, toBlob, getImageData). Breaks fingerprint hash matching without visibly affecting images.</span>
+          </div>
+          <div class="toggle-switch">
+            <input id="set-resist-canvas" type="checkbox" />
+            <span class="toggle-knob"></span>
+          </div>
+        </label>
+
+        <label class="toggle-row">
+          <div class="toggle-info">
+            <span class="toggle-label">Block known tracking &amp; fingerprinting scripts</span>
+            <span class="setting-hint">Blocks network requests to known analytics, fingerprinting, and advertising script CDNs. Uses the local <code>resources/privacy-blocklist.json</code> file — editable to add your own domains.</span>
+          </div>
+          <div class="toggle-switch">
+            <input id="set-block-fp-scripts" type="checkbox" />
+            <span class="toggle-knob"></span>
+          </div>
+        </label>
+
+        <div style="margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <button id="btn-open-privacy-panel" class="small-btn">&#128737; Open Privacy Diagnostics</button>
+        </div>
+      </section>
+
+      <!-- ── Hardware & Performance ── -->
+      <section class="settings-section">
+        <div class="section-title"><span class="section-icon">&#128187;</span> Hardware &amp; Performance</div>
+
+        <label class="toggle-row">
+          <div class="toggle-info">
+            <span class="toggle-label">Disable GPU acceleration</span>
+            <span class="setting-hint restart-note">&#9888; Reduces fingerprinting — GPU model, driver version, and rendering quirks are used to uniquely identify your device. Disabling GPU acceleration removes this tracking vector. <strong>Requires restart.</strong></span>
+          </div>
+          <div class="toggle-switch">
+            <input id="set-disable-gpu" type="checkbox" />
+            <span class="toggle-knob"></span>
+          </div>
+        </label>
+
+        <label class="toggle-row">
+          <div class="toggle-info">
+            <span class="toggle-label">Disable hardware media keys</span>
+            <span class="setting-hint">Prevents OS media key events from being intercepted by websites</span>
+          </div>
+          <div class="toggle-switch">
+            <input id="set-disable-media-keys" type="checkbox" />
+            <span class="toggle-knob"></span>
+          </div>
+        </label>
+
+        <div id="restart-banner" class="restart-banner hidden">
+          &#9888; Some changes require a browser restart to take effect.
+          <button id="btn-restart-now" class="small-btn" style="margin-left:8px">Restart Now</button>
+        </div>
+      </section>
+
+      <!-- ── General ── -->
+      <section class="settings-section">
+        <div class="section-title"><span class="section-icon">&#9881;</span> General</div>
+
+        <div class="setting-row">
+          <div class="setting-label">Download Folder</div>
+          <div style="display:flex;gap:6px">
+            <input id="set-download-folder" type="text" class="setting-input" readonly />
+            <button id="btn-choose-folder" class="small-btn">Browse…</button>
+          </div>
+        </div>
+
+        <div class="setting-row">
+          <div class="setting-label">Custom User Agent <span style="color:var(--text-2);font-weight:400">(optional)</span></div>
+          <input id="set-useragent" type="text" class="setting-input" placeholder="Leave empty for Chromium default" />
+          <div class="setting-hint">Override the browser's User-Agent string sent to websites</div>
+        </div>
+
+        <label class="toggle-row">
+          <div class="toggle-info">
+            <span class="toggle-label">Always open links in new tab</span>
+            <span class="setting-hint">Target="_blank" and navigation triggers always open a new tab</span>
+          </div>
+          <div class="toggle-switch">
+            <input id="set-always-new-tab" type="checkbox" />
+            <span class="toggle-knob"></span>
+          </div>
+        </label>
+      </section>
+
+      <!-- ── Appearance ── -->
+      <section class="settings-section">
+        <div class="section-title"><span class="section-icon">&#127763;</span> Appearance</div>
+
+        <label class="toggle-row">
+          <div class="toggle-info">
+            <span class="toggle-label">Dark mode</span>
+            <span class="setting-hint">Use the dark colour scheme (recommended for eye comfort and OLED screens)</span>
+          </div>
+          <div class="toggle-switch">
+            <input id="set-darkmode" type="checkbox" />
+            <span class="toggle-knob"></span>
+          </div>
+        </label>
+      </section>
+
+      <!-- ── Clear Data ── -->
+      <section class="settings-section">
+        <div class="section-title"><span class="section-icon">&#128465;</span> Clear Browsing Data</div>
+        <div class="clear-row">
+          <label class="clear-check"><input id="clear-cookies"    type="checkbox" checked /> Cookies</label>
+          <label class="clear-check"><input id="clear-cache"      type="checkbox" checked /> Cache</label>
+          <label class="clear-check"><input id="clear-ls"         type="checkbox" checked /> Local Storage</label>
+          <label class="clear-check"><input id="clear-hist-check" type="checkbox" checked /> History</label>
+        </div>
+        <button id="btn-clear-data" class="danger-btn" style="margin-top:10px">Clear Selected Data</button>
+      </section>
+
+      <div class="panel-actions">
+        <button id="btn-save-settings" class="primary-btn">Save Settings</button>
+      </div>
+    </div>
+  </aside>
+
+  <!-- History panel -->
+  <aside id="panel-history" class="panel hidden">
+    <div class="panel-header">
+      <h2>History</h2>
+      <button class="panel-close" data-panel="history">&#x2715;</button>
+    </div>
+    <div class="panel-body">
+      <div class="panel-toolbar">
+        <input id="history-search" type="text" placeholder="Search history…" />
+        <button id="btn-clear-history" class="danger-btn small-btn">Clear All</button>
+      </div>
+      <ul id="history-list" class="item-list"></ul>
+    </div>
+  </aside>
+
+  <!-- Downloads panel -->
+  <aside id="panel-downloads" class="panel hidden">
+    <div class="panel-header">
+      <h2>Downloads</h2>
+      <button class="panel-close" data-panel="downloads">&#x2715;</button>
+    </div>
+    <div class="panel-body">
+      <ul id="downloads-list" class="item-list"></ul>
+    </div>
+  </aside>
+
+  <!-- Bookmarks panel -->
+  <aside id="panel-bookmarks" class="panel hidden">
+    <div class="panel-header">
+      <h2>Bookmarks</h2>
+      <button class="panel-close" data-panel="bookmarks">&#x2715;</button>
+    </div>
+    <div class="panel-body">
+      <ul id="bookmarks-list" class="item-list"></ul>
+    </div>
+  </aside>
+
+  <!-- Privacy Mode / Anti-Fingerprinting diagnostics panel -->
+  <aside id="panel-privacy" class="panel hidden">
+    <div class="panel-header">
+      <h2>&#128737; Privacy &amp; Anti-Fingerprinting</h2>
+      <button class="panel-close" data-panel="privacy">&#x2715;</button>
+    </div>
+    <div class="panel-body">
+
+      <div class="privacy-warning-box" style="margin-bottom:12px">
+        <strong>&#9888; Best-effort protection only</strong><br>
+        This does not guarantee anonymity. Some websites may break.
+        Protections apply after DOM is ready — very early scripts may not be covered.
+        GPU-related protections require a browser restart to take full effect.
+      </div>
+
+      <!-- Status grid -->
+      <section>
+        <h3>Protection Status</h3>
+        <div class="privacy-status-grid">
+          <div class="ps-row">
+            <span class="ps-label">Privacy Mode</span>
+            <span id="ps-privacy-mode" class="ps-badge ps-off">OFF</span>
+          </div>
+          <div class="ps-row">
+            <span class="ps-label">GPU disabled at startup</span>
+            <span id="ps-gpu" class="ps-badge ps-off">OFF</span>
+          </div>
+          <div class="ps-row">
+            <span class="ps-label">WebGPU blocked</span>
+            <span id="ps-webgpu" class="ps-badge ps-off">OFF</span>
+          </div>
+          <div class="ps-row">
+            <span class="ps-label">WebGL blocked</span>
+            <span id="ps-webgl" class="ps-badge ps-off">OFF</span>
+          </div>
+          <div class="ps-row">
+            <span class="ps-label">Canvas FP resistance</span>
+            <span id="ps-canvas" class="ps-badge ps-off">OFF</span>
+          </div>
+          <div class="ps-row">
+            <span class="ps-label">Tracker script blocking</span>
+            <span id="ps-scripts" class="ps-badge ps-off">OFF</span>
+          </div>
+          <div class="ps-row">
+            <span class="ps-label">Restart required</span>
+            <span id="ps-restart" class="ps-badge ps-off">NO</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- Blocked request counter -->
+      <section>
+        <h3>Blocked Requests (this session)</h3>
+        <div class="info-grid" style="margin-bottom:8px">
+          <span class="info-label">Total blocked</span>
+          <span id="ps-blocked-count">0</span>
+        </div>
+        <div class="health-actions">
+          <button id="btn-privacy-enable"     class="primary-btn small-btn">Enable Privacy Mode</button>
+          <button id="btn-privacy-disable"    class="small-btn">Disable Privacy Mode</button>
+          <button id="btn-privacy-restart"    class="small-btn">Restart to Apply</button>
+          <button id="btn-clear-blocked-log"  class="small-btn">Clear Log</button>
+        </div>
+      </section>
+
+      <!-- Blocked request log -->
+      <section>
+        <h3>Recent Blocked Requests</h3>
+        <div id="privacy-blocked-log" class="privacy-log"></div>
+      </section>
+    </div>
+  </aside>
+
+  <!-- Health / Search Service panel -->
+  <aside id="panel-health" class="panel hidden">
+    <div class="panel-header">
+      <h2>&#128268; Search Service &amp; Health</h2>
+      <button class="panel-close" data-panel="health">&#x2715;</button>
+    </div>
+    <div class="panel-body">
+      <div id="health-status-banner" class="health-banner health-banner--unknown">
+        <span id="health-dot" class="health-dot"></span>
+        <span id="health-status-text">Checking…</span>
+      </div>
+
+      <section>
+        <h3>Search Service</h3>
+        <div class="info-grid">
+          <span class="info-label">Service version</span><span id="hi-svc-version">—</span>
+          <span class="info-label">Status</span><span id="hi-svc-status">—</span>
+          <span class="info-label">Local URL</span><span id="hi-svc-url">—</span>
+          <span class="info-label">Started at</span><span id="hi-svc-start">—</span>
+          <span class="info-label">Last health check</span><span id="hi-svc-health">—</span>
+        </div>
+        <div class="health-actions">
+          <button id="btn-svc-start"   class="primary-btn small-btn">Start</button>
+          <button id="btn-svc-stop"    class="small-btn">Stop</button>
+          <button id="btn-svc-restart" class="small-btn">Restart</button>
+          <button id="btn-svc-health"  class="small-btn">Run Health Check</button>
+        </div>
+      </section>
+
+      <section>
+        <h3>Browser</h3>
+        <div class="info-grid">
+          <span class="info-label">App version</span><span id="hi-app-version">—</span>
+          <span class="info-label">Electron</span><span id="hi-electron">—</span>
+          <span class="info-label">Chromium</span><span id="hi-chrome">—</span>
+          <span class="info-label">Node.js</span><span id="hi-node">—</span>
+        </div>
+        <div class="health-actions">
+          <button id="btn-check-browser-update" class="small-btn">Check Browser Updates</button>
+          <span id="browser-update-result" class="update-result"></span>
+        </div>
+      </section>
+
+      <section>
+        <h3>Search Service Updates</h3>
+        <div class="health-actions">
+          <button id="btn-check-search-update" class="small-btn">Check Search Service Updates</button>
+          <span id="search-update-result" class="update-result"></span>
+        </div>
+      </section>
+
+      <section>
+        <h3>Search Engine Log</h3>
+        <div class="health-actions">
+          <button id="btn-refresh-engine-log" class="small-btn">Refresh Log</button>
+        </div>
+        <div id="engine-log-container" class="engine-log-list">
+          <p class="engine-log-empty">No engine log entries yet.</p>
+        </div>
+      </section>
+
+      <section>
+        <h3>Quick navigate</h3>
+        <button id="btn-open-search" class="small-btn">Open Local Search</button>
+      </section>
+    </div>
+  </aside>
+
+  <!-- ══════════════════════ CONVERTER PANEL ══════════════════════ -->
+  <aside id="panel-converter" class="panel panel-converter hidden">
+    <div class="panel-header">
+      <span class="panel-header-logo">&#128196; Convert</span>
+      <span class="panel-header-sub">to Markdown</span>
+      <button class="panel-close" data-panel="converter">&#x2715;</button>
+    </div>
+    <div class="panel-body">
+
+      <!-- Drop zone + file chooser -->
+      <section>
+        <div id="md-drop-zone" class="md-drop-zone">
+          <div class="md-drop-icon">&#128196;</div>
+          <div class="md-drop-text">Drop files or folders here</div>
+          <div class="md-drop-sub">PDF, DOCX, XLSX, HTML, TXT</div>
+          <div style="display:flex;gap:8px;justify-content:center;margin-top:10px">
+            <button id="btn-md-choose"        class="primary-btn">Choose Files…</button>
+            <button id="btn-md-choose-folder" class="small-btn">Choose Folder…</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- File queue -->
+      <section id="md-file-section" class="hidden">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+          <h3 style="margin:0;border:none;padding:0">Files Queued</h3>
+          <button id="btn-md-clear" class="small-btn" style="font-size:11px">Clear All</button>
+        </div>
+        <ul id="md-file-list" class="md-file-list"></ul>
+
+        <label class="md-combine-row">
+          <input id="md-combine" type="checkbox" />
+          <span>Combine all into one <code>combined.md</code></span>
+        </label>
+
+        <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+          <button id="btn-md-convert" class="primary-btn">&#9654; Convert</button>
+          <button id="btn-md-open-folder" class="small-btn">&#128193; Open Output Folder</button>
+        </div>
+        <span id="md-convert-status" class="md-status-line"></span>
+      </section>
+
+      <!-- Preview pane -->
+      <section id="md-preview-section" class="hidden">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+          <h3 style="margin:0;border:none;padding:0">Preview</h3>
+          <span id="md-preview-name" class="md-preview-label"></span>
+        </div>
+        <pre id="md-preview" class="md-preview"></pre>
+      </section>
+
+    </div>
+  </aside>
+
+  <!-- Status / notice bar -->
+  <div id="notice-bar" class="hidden"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
