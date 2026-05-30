@@ -1,0 +1,111 @@
+# NovaBrowser — Built-in tracker/ad blocklist
+# Format: one domain per line, lines starting with # are comments.
+# This is a minimal starter list. You can replace this with a full list
+# such as EasyList domains, Steven Black's hosts, or the uBlock Origin list.
+#
+# To use a full list: download domains-only format from
+#   https://github.com/StevenBlack/hosts
+#   or https://raw.githubusercontent.com/nicehash/NiceHashQuickMiner/master/nhqm-blocklist.txt
+# and paste domain names here (one per line, no leading 0.0.0.0 needed).
+
+# ── Google Analytics / Tracking ──
+google-analytics.com
+www.google-analytics.com
+ssl.google-analytics.com
+analytics.google.com
+googletagmanager.com
+www.googletagmanager.com
+googletagservices.com
+googlesyndication.com
+pagead2.googlesyndication.com
+
+# ── Facebook Pixel / Tracking ──
+connect.facebook.net
+connect.facebook.com
+pixel.facebook.com
+an.facebook.com
+
+# ── Ad networks ──
+doubleclick.net
+ad.doubleclick.net
+ads.doubleclick.net
+googleads.g.doubleclick.net
+adservice.google.com
+adservice.google.co.uk
+advertising.com
+ads.advertising.com
+outbrain.com
+amplify.outbrain.com
+taboola.com
+trc.taboola.com
+cdn.taboola.com
+moatads.com
+adsafeprotected.com
+rubiconproject.com
+pixel.rubiconproject.com
+openx.net
+openx.com
+pubmatic.com
+ads.pubmatic.com
+ib.adnxs.com
+appnexus.com
+bidswitch.net
+casalemedia.com
+
+# ── Telemetry / crash reporting ──
+sentry.io
+ingest.sentry.io
+bugsnag.com
+notify.bugsnag.com
+segment.com
+api.segment.io
+cdn.segment.com
+mixpanel.com
+api.mixpanel.com
+cdn.mxpnl.com
+amplitude.com
+api.amplitude.com
+heap.io
+heapanalytics.com
+cdn.heapanalytics.com
+fullstory.com
+rs.fullstory.com
+hotjar.com
+static.hotjar.com
+script.hotjar.com
+clarity.ms
+c.clarity.ms
+mouseflow.com
+logrocket.com
+
+# ── Microsoft telemetry ──
+telemetry.microsoft.com
+vortex.data.microsoft.com
+settings-win.data.microsoft.com
+watson.telemetry.microsoft.com
+
+# ── Amazon advertising ──
+amazon-adsystem.com
+mads.amazon-adsystem.com
+aax.amazon-adsystem.com
+
+# ── Twitter/X tracking ──
+t.co
+ads-twitter.com
+ads-api.twitter.com
+analytics.twitter.com
+
+# ── Other ad networks ──
+criteo.com
+dis.criteo.com
+static.criteo.net
+adroll.com
+d.adroll.com
+scorecardresearch.com
+b.scorecardresearch.com
+quantserve.com
+pixel.quantserve.com
+rlcdn.com
+lijit.com
+yieldmo.com
+advertising.yahoo.com
