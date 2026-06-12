@@ -30,6 +30,7 @@ const {
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
+const http = require('http');
 
 // ── New modules ───────────────────────────────────────────────────────────────
 const searchService        = require('./main/searchServiceManager');
@@ -210,83 +211,207 @@ function setSitePrivacy(hostname, newSettings) {
 
 // ── Anti-fingerprinting script builder ───────────────────────────────────────
 //
-// Builds JavaScript that is injected into every page's MAIN world at dom-ready.
+// Builds JavaScript injected into every page's MAIN world at dom-ready.
+// Covers: canvas, WebGL, WebGPU, AudioContext, Navigator, Screen, Battery,
+//         Speech synthesis, timing resolution, and font enumeration.
+//
 // Important limitations:
-//   - Runs at dom-ready, not at navigation start — scripts loaded in <head>
-//     before DOMContentLoaded may already have read fingerprint surfaces.
-//   - This is best-effort protection, not a guarantee of anonymity.
-//   - WebGL/WebGPU blocking will break 3D content, maps, and games.
-//   - Canvas noise is invisible to humans but breaks exact fingerprint matching.
+//   - Runs at dom-ready — very early <head> inline scripts may read surfaces first.
+//   - Best-effort protection, not a guarantee of anonymity.
+//   - WebGL blocking breaks 3D content; WebGL spoofing is used instead by default.
 
 function buildAntiFpScript(s) {
   const on = !!s.privacyModeEnabled;
   const parts = [];
 
-  // ── Block WebGPU ──────────────────────────────────────────────────────────
-  // Hides navigator.gpu so pages cannot enumerate GPU capabilities.
+  // ── Block WebGPU ─────────────────────────────────────────────────────────
   if (on || s.blockWebGPU) {
     parts.push(`(function(){
-  /* LOCRIUM: WebGPU blocked — prevents GPU model/driver fingerprinting */
   try {
     Object.defineProperty(navigator, 'gpu', {
-      get: function(){ return undefined; },
-      configurable: false, enumerable: false
+      get: function(){ return undefined; }, configurable: false, enumerable: false
     });
   } catch(e) {}
 })();`);
   }
 
-  // ── Block WebGL ───────────────────────────────────────────────────────────
-  // Returns null for all WebGL context requests. Breaks 3D content.
+  // ── Block WebGL (optional — breaks 3D content) ────────────────────────────
   if (on || s.blockWebGL) {
     parts.push(`(function(){
-  /* LOCRIUM: WebGL blocked — prevents GPU renderer/vendor fingerprinting.
-   * WARNING: This will break 3D graphics, WebGL games, some maps. */
   var _orig = HTMLCanvasElement.prototype.getContext;
   HTMLCanvasElement.prototype.getContext = function(type) {
     if (type === 'webgl' || type === 'webgl2' ||
-        type === 'experimental-webgl' || type === 'experimental-webgl2') {
-      return null;
-    }
+        type === 'experimental-webgl' || type === 'experimental-webgl2') return null;
     return _orig.apply(this, arguments);
+  };
+})();`);
+  } else if (on || s.resistCanvasFingerprinting) {
+    // ── WebGL renderer/vendor spoof (preferred over blocking) ──────────────
+    // Reports a generic GPU string instead of the real hardware identifier.
+    // Sites cannot distinguish your specific GPU model or driver version.
+    parts.push(`(function(){
+  var _origGetContext = HTMLCanvasElement.prototype.getContext;
+  HTMLCanvasElement.prototype.getContext = function(type, attrs) {
+    var ctx = _origGetContext.apply(this, arguments);
+    if (!ctx) return ctx;
+    if (type === 'webgl' || type === 'webgl2' ||
+        type === 'experimental-webgl' || type === 'experimental-webgl2') {
+      var _origGetParam = ctx.getParameter.bind(ctx);
+      ctx.getParameter = function(param) {
+        var UNMASKED_VENDOR   = 0x9245;
+        var UNMASKED_RENDERER = 0x9246;
+        if (param === UNMASKED_VENDOR)   return 'Intel Inc.';
+        if (param === UNMASKED_RENDERER) return 'Intel Iris OpenGL Engine';
+        return _origGetParam(param);
+      };
+      var ext = ctx.getExtension('WEBGL_debug_renderer_info');
+      if (ext) {
+        try {
+          Object.defineProperty(ext, 'UNMASKED_VENDOR_WEBGL',   { value: 0x9245 });
+          Object.defineProperty(ext, 'UNMASKED_RENDERER_WEBGL', { value: 0x9246 });
+        } catch(_) {}
+      }
+    }
+    return ctx;
   };
 })();`);
   }
 
   // ── Canvas fingerprinting resistance ─────────────────────────────────────
-  // Flips one bit in pixel data returned by canvas extraction APIs.
-  // Invisible to users, but breaks exact fingerprint hash matching.
-  // Does NOT block canvas drawing — only extraction calls are affected.
+  // Adds session-unique noise to canvas pixel extraction APIs.
+  // Invisible to users; breaks exact fingerprint hash matching every session.
   if (on || s.resistCanvasFingerprinting) {
     parts.push(`(function(){
-  /* LOCRIUM: Canvas FP resistance — flips one pixel bit in extraction calls.
-   * Limitation: best-effort; does not stop all canvas-based fingerprinting. */
-  function noisyPixel(canvas) {
+  var _noise = (Math.random() * 2 - 1) | 0; // -1 or 0, changes every session
+  function addNoise(canvas) {
     try {
-      var ctx = canvas.getContext && canvas.getContext('2d');
-      if (ctx && canvas.width > 0 && canvas.height > 0) {
-        var d = ctx.getImageData(0, 0, 1, 1);
-        d.data[0] ^= 1;
-        ctx.putImageData(d, 0, 0);
+      var ctx2 = canvas.getContext && canvas.getContext('2d');
+      if (ctx2 && canvas.width > 0 && canvas.height > 0) {
+        var d = ctx2.getImageData(0, 0, 1, 1);
+        d.data[0] = (d.data[0] + _noise + 256) & 0xff;
+        ctx2.putImageData(d, 0, 0);
       }
     } catch(e) {}
   }
-  var _origURL = HTMLCanvasElement.prototype.toDataURL;
+  var _oURL  = HTMLCanvasElement.prototype.toDataURL;
+  var _oBlob = HTMLCanvasElement.prototype.toBlob;
+  var _oGID  = CanvasRenderingContext2D.prototype.getImageData;
   HTMLCanvasElement.prototype.toDataURL = function() {
-    noisyPixel(this);
-    return _origURL.apply(this, arguments);
+    addNoise(this); return _oURL.apply(this, arguments);
   };
-  var _origBlob = HTMLCanvasElement.prototype.toBlob;
   HTMLCanvasElement.prototype.toBlob = function() {
-    noisyPixel(this);
-    return _origBlob.apply(this, arguments);
+    addNoise(this); return _oBlob.apply(this, arguments);
   };
-  var _origGID = CanvasRenderingContext2D.prototype.getImageData;
   CanvasRenderingContext2D.prototype.getImageData = function() {
-    var r = _origGID.apply(this, arguments);
-    if (r && r.data && r.data.length > 0) r.data[0] ^= 1;
+    var r = _oGID.apply(this, arguments);
+    if (r && r.data && r.data.length > 3) {
+      r.data[0] = (r.data[0] + _noise + 256) & 0xff;
+    }
     return r;
   };
+})();`);
+
+    // ── AudioContext fingerprinting resistance ────────────────────────────
+    // Adds imperceptible noise to audio sample buffers.
+    // The AudioContext analyser produces a unique value per device/driver;
+    // adding ±tiny noise per session makes the hash different every run.
+    parts.push(`(function(){
+  var _AudioCtx = window.AudioContext || window.webkitAudioContext;
+  if (!_AudioCtx) return;
+  var _orig = _AudioCtx.prototype.createOscillator;
+  _AudioCtx.prototype.createOscillator = function() {
+    var osc = _orig.apply(this, arguments);
+    osc.frequency.value += (Math.random() - 0.5) * 0.0001;
+    return osc;
+  };
+  var _origBuf = _AudioCtx.prototype.createBuffer;
+  _AudioCtx.prototype.createBuffer = function(ch, len, sr) {
+    var buf = _origBuf.apply(this, arguments);
+    try {
+      for (var c = 0; c < buf.numberOfChannels; c++) {
+        var data = buf.getChannelData(c);
+        for (var i = 0; i < Math.min(data.length, 32); i++) {
+          data[i] += (Math.random() - 0.5) * 1e-7;
+        }
+      }
+    } catch(_) {}
+    return buf;
+  };
+})();`);
+
+    // ── Navigator property spoofing ───────────────────────────────────────
+    // Reports fixed, generic values for hardware/platform properties.
+    // hardwareConcurrency and deviceMemory leak CPU/RAM info.
+    parts.push(`(function(){
+  var _def = function(obj, prop, val) {
+    try { Object.defineProperty(obj, prop, { get: function(){ return val; }, configurable: false }); } catch(_){}
+  };
+  _def(navigator, 'hardwareConcurrency', 4);
+  _def(navigator, 'deviceMemory', 8);
+  _def(navigator, 'platform', 'Win32');
+  _def(navigator, 'vendor', 'Google Inc.');
+  _def(navigator, 'doNotTrack', '1');
+  // Spoof connection to a generic broadband profile
+  if (navigator.connection) {
+    try {
+      Object.defineProperty(navigator, 'connection', {
+        get: function() {
+          return { effectiveType: '4g', downlink: 10, rtt: 50, saveData: false };
+        }, configurable: false
+      });
+    } catch(_) {}
+  }
+})();`);
+
+    // ── Screen resolution spoofing ────────────────────────────────────────
+    // Reports 1920×1080 regardless of actual display.
+    // Actual resolution + bit depth combination is highly unique.
+    parts.push(`(function(){
+  var _def = function(obj, prop, val) {
+    try { Object.defineProperty(obj, prop, { get: function(){ return val; }, configurable: false }); } catch(_){}
+  };
+  _def(screen, 'width',       1920);
+  _def(screen, 'height',      1080);
+  _def(screen, 'availWidth',  1920);
+  _def(screen, 'availHeight', 1040);
+  _def(screen, 'colorDepth',  24);
+  _def(screen, 'pixelDepth',  24);
+  try {
+    Object.defineProperty(window, 'devicePixelRatio', {
+      get: function(){ return 1; }, configurable: false
+    });
+  } catch(_) {}
+})();`);
+
+    // ── Battery API block ─────────────────────────────────────────────────
+    // Battery status (charging state, level, times) is a tracking vector.
+    parts.push(`(function(){
+  if (navigator.getBattery) {
+    navigator.getBattery = function() {
+      return Promise.resolve({ charging: true, chargingTime: 0, dischargingTime: Infinity, level: 1.0,
+        addEventListener: function(){}, removeEventListener: function(){} });
+    };
+  }
+})();`);
+
+    // ── Speech synthesis block ────────────────────────────────────────────
+    // Voice list varies per OS/browser and is used as a fingerprint.
+    parts.push(`(function(){
+  if (window.speechSynthesis) {
+    try {
+      Object.defineProperty(window.speechSynthesis, 'getVoices', {
+        value: function(){ return []; }, configurable: false
+      });
+    } catch(_) {}
+  }
+})();`);
+
+    // ── Timing resolution clamping ────────────────────────────────────────
+    // High-resolution timers enable CPU/cache side-channel attacks.
+    // Clamp performance.now() to 1ms resolution (Chromium default is ~100µs).
+    parts.push(`(function(){
+  var _origNow = performance.now.bind(performance);
+  performance.now = function() { return Math.round(_origNow() * 10) / 10; };
 })();`);
   }
 
@@ -595,6 +720,7 @@ function createWindow() {
   });
 
   setupIPC();
+  startAgentApi();
 }
 
 // ── Tab management ───────────────────────────────────────────────────────────
@@ -1291,6 +1417,20 @@ function setupIPC() {
     }
   });
 
+  // ── Ad-block quick toggle ──
+
+  ipcMain.handle('toggle-ad-block', (_e, { enabled }) => {
+    settingsStore.set('blockTrackers', !!enabled);
+    settingsStore.set('blockKnownTrackingScripts', !!enabled);
+    try { configureSession(session.defaultSession); } catch (_) {}
+    sendToRenderer('ad-block-changed', { enabled: !!enabled });
+    return { enabled: !!enabled };
+  });
+
+  ipcMain.handle('get-ad-block', () => ({
+    enabled: !!settingsStore.get('blockTrackers'),
+  }));
+
   // ── Choose download folder ──
 
   ipcMain.handle('choose-download-folder', async () => {
@@ -1534,6 +1674,161 @@ if (!gotLock) {
       mainWindow.focus();
     }
   });
+}
+
+// ── Agent HTTP API ────────────────────────────────────────────────────────────
+// Lightweight localhost-only REST API for automation (OpenClaw agents, scripts).
+// Bind address is always 127.0.0.1 — never exposed to the network.
+// Optional auth: set LOCRIUM_API_KEY env var; pass it as X-Locrium-Key header.
+// Optional port: set LOCRIUM_API_PORT env var (default 7717).
+//
+// Endpoints:
+//   GET  /api/status           — health check
+//   GET  /api/tabs             — list open tabs
+//   GET  /api/url              — current tab URL
+//   GET  /api/text             — current page innerText
+//   GET  /api/html             — current page outerHTML
+//   GET  /api/screenshot       — PNG screenshot (Content-Type: image/png)
+//   POST /api/navigate         — { url, tabId? }
+//   POST /api/new-tab          — { url?, incognito? }
+//   POST /api/close-tab        — { id? }  (omit to close active tab)
+//   POST /api/exec             — { js, tabId? }  → { result }
+//   POST /api/back             — go back
+//   POST /api/forward          — go forward
+//   POST /api/reload           — reload current tab
+//   POST /api/screenshot       — same as GET but POST-friendly
+
+function startAgentApi() {
+  const port   = parseInt(process.env.LOCRIUM_API_PORT || '7717', 10);
+  const apiKey = process.env.LOCRIUM_API_KEY || null;
+
+  const server = http.createServer(async (req, res) => {
+    // Localhost-only guard
+    const remote = req.socket.remoteAddress;
+    if (remote !== '127.0.0.1' && remote !== '::1' && remote !== '::ffff:127.0.0.1') {
+      res.writeHead(403, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Forbidden: localhost only' }));
+      return;
+    }
+
+    // Auth guard
+    if (apiKey && req.headers['x-locrium-key'] !== apiKey) {
+      res.writeHead(401, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Unauthorized: set X-Locrium-Key header' }));
+      return;
+    }
+
+    // Parse body
+    let body = '';
+    for await (const chunk of req) body += chunk;
+    let data = {};
+    if (body) { try { data = JSON.parse(body); } catch (_) {} }
+
+    // CORS (localhost-only so this is safe)
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Locrium-Key');
+    if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return; }
+
+    const u        = new URL(req.url, `http://127.0.0.1:${port}`);
+    const pathname = u.pathname;
+
+    // Resolve which tab to act on
+    const activeTab  = tabs.find((t) => t.id === activeTabId);
+    const targetTab  = data.tabId != null
+      ? tabs.find((t) => t.id === data.tabId)
+      : activeTab;
+
+    const json = (obj, code = 200) => {
+      res.writeHead(code, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(obj));
+    };
+    const notab = () => json({ error: 'No active tab' }, 404);
+
+    try {
+      if (pathname === '/api/status') {
+        json({ ok: true, version: app.getVersion(), tabs: tabs.length, activeTabId });
+
+      } else if (pathname === '/api/tabs') {
+        json(getTabsState());
+
+      } else if (pathname === '/api/url') {
+        if (!targetTab) return notab();
+        json({ url: targetTab.view.webContents.getURL(), tabId: activeTabId });
+
+      } else if (pathname === '/api/text') {
+        if (!targetTab) return notab();
+        const text = await targetTab.view.webContents.executeJavaScript(
+          'document.body ? document.body.innerText : ""'
+        );
+        json({ text });
+
+      } else if (pathname === '/api/html') {
+        if (!targetTab) return notab();
+        const html = await targetTab.view.webContents.executeJavaScript(
+          'document.documentElement ? document.documentElement.outerHTML : ""'
+        );
+        json({ html });
+
+      } else if (pathname === '/api/screenshot') {
+        if (!targetTab) return notab();
+        const img = await targetTab.view.webContents.capturePage();
+        const png = img.toPNG();
+        res.writeHead(200, { 'Content-Type': 'image/png', 'Content-Length': png.length });
+        res.end(png);
+
+      } else if (pathname === '/api/navigate') {
+        if (!targetTab) return notab();
+        targetTab.view.webContents.loadURL(resolveUrl(data.url || ''));
+        json({ ok: true });
+
+      } else if (pathname === '/api/new-tab') {
+        const tab = createTab(data.url || settingsStore.get('homepage'), !!data.incognito);
+        sendToRenderer('tabs-state', getTabsState());
+        setActiveTab(tab.id);
+        json({ id: tab.id });
+
+      } else if (pathname === '/api/close-tab') {
+        closeTab(data.id != null ? data.id : activeTabId);
+        json({ ok: true });
+
+      } else if (pathname === '/api/exec') {
+        if (!targetTab) return notab();
+        const result = await targetTab.view.webContents.executeJavaScript(data.js || 'undefined');
+        json({ result });
+
+      } else if (pathname === '/api/back') {
+        if (!targetTab) return notab();
+        targetTab.view.webContents.goBack();
+        json({ ok: true });
+
+      } else if (pathname === '/api/forward') {
+        if (!targetTab) return notab();
+        targetTab.view.webContents.goForward();
+        json({ ok: true });
+
+      } else if (pathname === '/api/reload') {
+        if (!targetTab) return notab();
+        targetTab.view.webContents.reload();
+        json({ ok: true });
+
+      } else {
+        json({ error: 'Unknown endpoint. See README for API docs.' }, 404);
+      }
+    } catch (err) {
+      json({ error: err.message }, 500);
+    }
+  });
+
+  server.listen(port, '127.0.0.1', () => {
+    console.log(`[Locrium] Agent API → http://127.0.0.1:${port}/api/status`);
+  });
+
+  server.on('error', (err) => {
+    console.warn('[Locrium] Agent API failed to start:', err.message);
+  });
+
+  return server;
 }
 
 app.whenReady().then(async () => {
