@@ -34,6 +34,10 @@ async function init() {
   const hsResult = await window.locrium.getHighSecurity();
   setHighSecurityUI(hsResult.enabled);
 
+  // Load ad-block state
+  const abResult = await window.locrium.getAdBlock();
+  setAdBlockUI(abResult.enabled);
+
   // Load initial search service status → set badge
   const svcStatus = await window.locrium.searchServiceStatus();
   updateSearchBadge(svcStatus && svcStatus.running);
@@ -123,18 +127,20 @@ function syncAddressBar(url) {
     addressBar.value = url;
   }
 
-  // Update lock icon
+  // Update lock icon with semantic CSS classes
+  lockIcon.classList.remove('secure', 'insecure', 'neutral');
   if (url && url.startsWith('https://')) {
     lockIcon.textContent = '🔒';
-    lockIcon.title = 'Secure connection';
+    lockIcon.title = 'Secure (HTTPS)';
+    lockIcon.classList.add('secure');
   } else if (url && url.startsWith('http://')) {
     lockIcon.textContent = '⚠';
-    lockIcon.title = 'Not secure';
-    lockIcon.style.color = '#e0b452';
+    lockIcon.title = 'Not secure — connection is unencrypted';
+    lockIcon.classList.add('insecure');
   } else {
     lockIcon.textContent = '🔒';
     lockIcon.title = '';
-    lockIcon.style.color = '';
+    lockIcon.classList.add('neutral');
   }
 
   // Refresh per-site shield badge
@@ -302,6 +308,11 @@ function registerIpcListeners() {
     }
   });
 
+  // ── Ad-block: reflect live changes (e.g. from agent API) ──
+  window.locrium.on('ad-block-changed', ({ enabled }) => {
+    setAdBlockUI(enabled);
+  });
+
   // ── High Security Mode: reflect live changes from any source ──
   window.locrium.on('high-security-changed', ({ enabled }) => {
     setHighSecurityUI(enabled);
@@ -399,6 +410,13 @@ function registerEventListeners() {
     settings = (result && result.settings) ? result.settings : result;
     applyTheme(settings.darkMode);
     $('btn-theme-toggle').textContent = settings.darkMode ? '☀' : '🌙';
+  });
+
+  // ── Ad-block toggle ──
+  $('btn-ad-block').addEventListener('click', async () => {
+    const result = await window.locrium.toggleAdBlock(!adBlockEnabled);
+    setAdBlockUI(result.enabled);
+    showNotice(result.enabled ? '🛡 Ad blocking ON' : '⚠ Ad blocking OFF', 2500);
   });
 
   // ── High Security Mode toggle ──
@@ -899,6 +917,22 @@ async function updateBookmarkButton(url) {
   const isBookmarked = await window.locrium.isBookmarked(url);
   $('btn-bookmark').classList.toggle('bookmarked', isBookmarked);
   $('btn-bookmark').textContent = isBookmarked ? '★' : '☆';
+}
+
+// ── Ad-block helpers ──────────────────────────────────────────────────────────
+
+let adBlockEnabled = false;
+
+function setAdBlockUI(enabled) {
+  adBlockEnabled = enabled;
+  const btn = $('btn-ad-block');
+  if (enabled) {
+    btn.classList.add('active');
+    btn.title = 'Ad & Tracker Blocking: ON — click to disable';
+  } else {
+    btn.classList.remove('active');
+    btn.title = 'Ad & Tracker Blocking: OFF — click to enable';
+  }
 }
 
 // ── High Security Mode helpers ────────────────────────────────────────────────
