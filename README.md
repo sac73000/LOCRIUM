@@ -225,6 +225,74 @@ npm run build:unpack      # Unpacked directory (for testing without installer)
 
 ---
 
+## Quick Start (Linux)
+
+### 1. Prerequisites
+
+- **Node.js** v18 or higher — install via your distro's package manager or https://nodejs.org/
+- A desktop environment (GNOME, KDE, XFCE, etc.) — Electron requires a display server
+- **libgtk-3**, **libnss3**, **libasound2** — usually already present on most desktops
+
+Ubuntu/Debian one-liner:
+```bash
+sudo apt install -y libgtk-3-0 libnss3 libasound2 libxss1 libgbm1
+```
+
+Fedora/RHEL:
+```bash
+sudo dnf install -y gtk3 nss alsa-lib libXScrnSaver mesa-libgbm
+```
+
+### 2. Download the pre-built package
+
+Download `LOCRIUM-Linux-v1.2.1.tar.gz` from the Releases page, then:
+
+```bash
+tar -xzf LOCRIUM-Linux-v1.2.1.tar.gz
+cd LOCRIUM-linux-x64
+chmod +x LOCRIUM
+./LOCRIUM
+```
+
+That's it — no install step, no package manager, runs straight from the folder.
+
+### 3. Optional: add to your application launcher
+
+```bash
+# Create a desktop entry
+cat > ~/.local/share/applications/locrium.desktop << EOF
+[Desktop Entry]
+Type=Application
+Name=LOCRIUM
+Comment=Privacy-focused desktop browser
+Exec=/path/to/LOCRIUM-linux-x64/LOCRIUM
+Icon=/path/to/LOCRIUM-linux-x64/resources/app/build/icon.png
+Categories=Network;WebBrowser;
+Terminal=false
+EOF
+```
+
+### 4. Build from source on Linux
+
+```bash
+cd LOCRIUM
+npm install
+npm start                          # Run in dev mode
+node_modules/.bin/electron-packager . LOCRIUM --platform=linux --arch=x64 --out=dist --overwrite
+```
+
+### Linux-specific notes
+
+| Topic | Detail |
+|---|---|
+| Sandbox | Electron's renderer sandbox (`--no-sandbox`) may be needed on some distros. If the app fails to start, run: `./LOCRIUM --no-sandbox` |
+| Wayland | Runs on XWayland by default. For native Wayland: `./LOCRIUM --enable-features=UseOzonePlatform --ozone-platform=wayland` |
+| Agent API | Works identically to Windows — `localhost:7717` |
+| Search service | Works identically to Windows — `localhost:8888` |
+| Data storage | Settings/bookmarks/history stored in `~/.config/locrium/` |
+
+---
+
 ## Release Workflow
 
 Follow these steps for every public release:
