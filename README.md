@@ -32,6 +32,109 @@ LOCRIUM/
 
 ---
 
+## Agent API (localhost:7717)
+
+LOCRIUM exposes a full HTTP control API for automation agents (OpenClaw and any other local script or program). It binds **only** to `127.0.0.1` — it is never exposed to your LAN or the internet.
+
+### Security
+
+| Setting | Default | How to change |
+|---|---|---|
+| Port | `7717` | Set env var `LOCRIUM_API_PORT` before launching |
+| Auth | None | Set env var `LOCRIUM_API_KEY`; pass it as `X-Locrium-Key` header |
+| Bind address | `127.0.0.1` | Hard-coded, cannot be changed |
+
+### Base URL
+
+```
+http://127.0.0.1:7717
+```
+
+---
+
+### Read endpoints
+
+| Method | Endpoint | Description |
+|---|---|---|
+| GET | `/api/status` | Health check — version, tab count, active tab ID |
+| GET | `/api/tabs` | List all open tabs (id, url, title, incognito) |
+| GET | `/api/url` | Current tab URL |
+| GET | `/api/page` | **Best for agents** — url, title, description, text, links in one call |
+| GET | `/api/metadata` | All meta/og/twitter tags, canonical, lang, charset |
+| GET | `/api/text` | `document.body.innerText` of current page |
+| GET | `/api/html` | Full `outerHTML` of current page |
+| GET | `/api/links?limit=N` | All `<a href>` elements: href, text, rel (default limit 300) |
+| GET | `/api/screenshot` | PNG screenshot (Content-Type: image/png) |
+| GET | `/api/cookies` | Cookies for the current URL |
+| GET | `/api/cookies?name=x` | Single cookie by name |
+| GET | `/api/storage` | `localStorage` and `sessionStorage` as JSON |
+| GET | `/api/search?q=…` | Search via built-in multi-engine service, returns JSON results |
+
+---
+
+### Action endpoints
+
+| Method | Endpoint | Body | Description |
+|---|---|---|---|
+| POST | `/api/navigate` | `{ url, wait?, tabId? }` | Navigate to URL; `wait: true` blocks until page finishes loading |
+| POST | `/api/new-tab` | `{ url?, incognito? }` | Open a new tab, returns `{ id }` |
+| POST | `/api/close-tab` | `{ id? }` | Close tab by id (omit = close active tab) |
+| POST | `/api/back` | — | Go back |
+| POST | `/api/forward` | — | Go forward |
+| POST | `/api/reload` | — | Reload current page |
+| POST | `/api/exec` | `{ js, tabId? }` | Run arbitrary JS, returns `{ result }` |
+| POST | `/api/find` | `{ selector, attrs?, limit? }` | CSS selector → array of `{ tag, id, class, text, html, value, href, src, ...attrs }` |
+| POST | `/api/click` | `{ selector }` | Click element by CSS selector |
+| POST | `/api/type` | `{ selector, text, clear? }` | Type into input; `clear: true` replaces existing value |
+| POST | `/api/scroll` | `{ selector?, x?, y?, behavior? }` | Scroll to element or position |
+| POST | `/api/wait` | `{ selector, timeout? }` | Wait for CSS selector to appear (max 30 s) |
+| POST | `/api/cookies` | `{ name, value, url?, … }` | Set a cookie |
+| DELETE | `/api/cookies` | `{ name? }` | Remove cookie(s) for current URL |
+
+All POST bodies are JSON. `tabId` is optional on any endpoint — omit to target the active tab.
+
+---
+
+### Example: agent search-and-read loop
+
+```python
+import requests, time
+
+BASE = "http://127.0.0.1:7717"
+
+# 1. Search
+results = requests.get(f"{BASE}/api/search", params={"q": "latest AI papers"}).json()
+
+# 2. Navigate to first result (wait for load)
+first_url = results["results"][0]["url"]
+requests.post(f"{BASE}/api/navigate", json={"url": first_url, "wait": True})
+
+# 3. Grab full page snapshot
+page = requests.get(f"{BASE}/api/page").json()
+print(page["title"])
+print(page["text"][:2000])
+
+# 4. Find all outbound links
+for link in page["links"]:
+    print(link["href"], link["text"])
+```
+
+### Example: fill and submit a form
+
+```python
+BASE = "http://127.0.0.1:7717"
+
+requests.post(f"{BASE}/api/navigate", json={"url": "https://example.com/login", "wait": True})
+requests.post(f"{BASE}/api/type",     json={"selector": "input[name=email]",    "text": "me@example.com", "clear": True})
+requests.post(f"{BASE}/api/type",     json={"selector": "input[name=password]", "text": "hunter2",        "clear": True})
+requests.post(f"{BASE}/api/click",    json={"selector": "button[type=submit]"})
+requests.post(f"{BASE}/api/wait",     json={"selector": ".dashboard", "timeout": 8000})
+
+page = requests.get(f"{BASE}/api/page").json()
+```
+
+---
+
 ## Local Search Service
 
 LOCRIUM bundles a lightweight local search service that runs as part of the Electron main process.
