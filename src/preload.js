@@ -91,6 +91,10 @@ contextBridge.exposeInMainWorld('locrium', {
   panelOpen:  (w) => ipcRenderer.invoke('panel-open', { w }),
   panelClose: ()  => ipcRenderer.invoke('panel-close'),
 
+  // ── Ad-block quick toggle ──
+  getAdBlock:    ()         => ipcRenderer.invoke('get-ad-block'),
+  toggleAdBlock: (enabled)  => ipcRenderer.invoke('toggle-ad-block', { enabled }),
+
   // ── Search engine log ──
   getEngineLog: () => ipcRenderer.invoke('get-engine-log'),
 
