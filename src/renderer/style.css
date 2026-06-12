@@ -915,6 +915,22 @@ a:hover { text-decoration: underline; }
 .elog-stat.ok   { color: var(--success); }
 .elog-stat.fail { color: var(--error, #e05c5c); }
 
+/* ── Ad-block button ── */
+#btn-ad-block {
+  transition: background 0.15s, color 0.15s, box-shadow 0.15s;
+  opacity: 0.45;
+}
+#btn-ad-block.active {
+  background: rgba(88,101,242,0.15) !important;
+  color: var(--accent) !important;
+  box-shadow: 0 0 0 1px var(--accent);
+  opacity: 1;
+}
+#btn-ad-block.active:hover {
+  background: rgba(88,101,242,0.25) !important;
+}
+#btn-ad-block:not(.active):hover { opacity: 0.75; }
+
 /* ── High Security Mode button ── */
 #btn-high-security {
   transition: background 0.15s, color 0.15s, box-shadow 0.15s;
@@ -927,6 +943,12 @@ a:hover { text-decoration: underline; }
 #btn-high-security.active:hover {
   background: rgba(82,224,135,0.25) !important;
 }
+
+/* ── Lock icon color states ── */
+#lock-icon { font-size: 12px; flex-shrink: 0; transition: color 0.15s; }
+#lock-icon.secure   { color: var(--success); }
+#lock-icon.insecure { color: var(--warn); }
+#lock-icon.neutral  { color: var(--text-2); }
 
 /* ── Site shield button (inside address bar) ── */
 .site-shield-btn {
