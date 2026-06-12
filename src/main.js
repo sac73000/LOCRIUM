@@ -1777,10 +1777,22 @@ function startAgentApi() {
         res.writeHead(200, { 'Content-Type': 'image/png', 'Content-Length': png.length });
         res.end(png);
 
+      // ── Navigation ──────────────────────────────────────────────────────────
       } else if (pathname === '/api/navigate') {
         if (!targetTab) return notab();
-        targetTab.view.webContents.loadURL(resolveUrl(data.url || ''));
-        json({ ok: true });
+        const navUrl = resolveUrl(data.url || '');
+        if (data.wait) {
+          await new Promise((resolve, reject) => {
+            const wc = targetTab.view.webContents;
+            const tid = setTimeout(() => { wc.removeListener('did-finish-load', onLoad); resolve(); }, 30000);
+            function onLoad() { clearTimeout(tid); resolve(); }
+            wc.once('did-finish-load', onLoad);
+            wc.loadURL(navUrl);
+          });
+        } else {
+          targetTab.view.webContents.loadURL(navUrl);
+        }
+        json({ ok: true, url: navUrl });
 
       } else if (pathname === '/api/new-tab') {
         const tab = createTab(data.url || settingsStore.get('homepage'), !!data.incognito);
@@ -1791,11 +1803,6 @@ function startAgentApi() {
       } else if (pathname === '/api/close-tab') {
         closeTab(data.id != null ? data.id : activeTabId);
         json({ ok: true });
-
-      } else if (pathname === '/api/exec') {
-        if (!targetTab) return notab();
-        const result = await targetTab.view.webContents.executeJavaScript(data.js || 'undefined');
-        json({ result });
 
       } else if (pathname === '/api/back') {
         if (!targetTab) return notab();
@@ -1812,8 +1819,276 @@ function startAgentApi() {
         targetTab.view.webContents.reload();
         json({ ok: true });
 
+      // ── Page reading ─────────────────────────────────────────────────────────
+      } else if (pathname === '/api/exec') {
+        if (!targetTab) return notab();
+        const result = await targetTab.view.webContents.executeJavaScript(data.js || 'undefined');
+        json({ result });
+
+      } else if (pathname === '/api/page') {
+        // Full snapshot in one call — url, title, description, text, links
+        if (!targetTab) return notab();
+        const linkLimit = parseInt(u.searchParams.get('links') || data.links || '150', 10);
+        const snapshot = await targetTab.view.webContents.executeJavaScript(`
+          (() => {
+            const get = (sel) => {
+              const el = document.querySelector(sel);
+              if (!el) return null;
+              return (el.content || el.getAttribute('content') || el.href || el.textContent || '').trim() || null;
+            };
+            const linkLimit = ${linkLimit};
+            const rawAnchors = Array.from(document.querySelectorAll('a[href]')).slice(0, linkLimit);
+            return {
+              url:         location.href,
+              title:       document.title || null,
+              description: get('meta[name="description"]') || get('meta[property="og:description"]'),
+              canonical:   get('link[rel="canonical"]'),
+              lang:        document.documentElement.lang || null,
+              text:        document.body ? document.body.innerText.trim().slice(0, 50000) : '',
+              links: rawAnchors
+                .map(a => ({ href: a.href, text: (a.textContent || '').trim().slice(0, 200), rel: a.rel || null }))
+                .filter(l => l.href && !l.href.startsWith('javascript:')),
+            };
+          })()
+        `);
+        json(snapshot);
+
+      } else if (pathname === '/api/metadata') {
+        if (!targetTab) return notab();
+        const meta = await targetTab.view.webContents.executeJavaScript(`
+          (() => {
+            const get = (sel) => {
+              const el = document.querySelector(sel);
+              if (!el) return null;
+              return (el.content || el.getAttribute('content') || el.href || el.textContent || '').trim() || null;
+            };
+            const allMeta = {};
+            document.querySelectorAll('meta[name], meta[property]').forEach(m => {
+              const key = m.getAttribute('name') || m.getAttribute('property');
+              if (key) allMeta[key] = m.getAttribute('content');
+            });
+            return {
+              url:         location.href,
+              title:       document.title || null,
+              description: get('meta[name="description"]') || get('meta[property="og:description"]'),
+              canonical:   get('link[rel="canonical"]'),
+              ogTitle:     get('meta[property="og:title"]'),
+              ogImage:     get('meta[property="og:image"]'),
+              ogUrl:       get('meta[property="og:url"]'),
+              ogType:      get('meta[property="og:type"]'),
+              ogSiteName:  get('meta[property="og:site_name"]'),
+              twitterCard: get('meta[name="twitter:card"]'),
+              keywords:    get('meta[name="keywords"]'),
+              robots:      get('meta[name="robots"]'),
+              charset:     document.characterSet || null,
+              lang:        document.documentElement.lang || null,
+              allMeta,
+            };
+          })()
+        `);
+        json(meta);
+
+      } else if (pathname === '/api/links') {
+        if (!targetTab) return notab();
+        const limit = parseInt(u.searchParams.get('limit') || data.limit || '300', 10);
+        const links = await targetTab.view.webContents.executeJavaScript(`
+          (() => {
+            return Array.from(document.querySelectorAll('a[href]')).slice(0, ${limit})
+              .map(a => ({
+                href:  a.href || null,
+                text:  (a.textContent || '').trim().slice(0, 200),
+                title: a.title || null,
+                rel:   a.rel || null,
+              }))
+              .filter(l => l.href && !l.href.startsWith('javascript:'));
+          })()
+        `);
+        json({ links, count: links.length });
+
+      // ── Search (proxy to local search service) ───────────────────────────────
+      } else if (pathname === '/api/search') {
+        const q = u.searchParams.get('q') || data.q || '';
+        if (!q) return json({ error: 'Missing q parameter. Use GET /api/search?q=your+query' }, 400);
+        const searchPort = settingsStore.get('searchServicePort') || 8888;
+        const searchResult = await new Promise((resolve) => {
+          const searchReq = http.get(
+            `http://127.0.0.1:${searchPort}/api/search?q=${encodeURIComponent(q)}`,
+            (r) => {
+              let body = '';
+              r.on('data', (c) => { body += c; });
+              r.on('end', () => {
+                try { resolve(JSON.parse(body)); } catch (_) {
+                  resolve({ error: 'Search service returned non-JSON', raw: body.slice(0, 200) });
+                }
+              });
+            }
+          );
+          searchReq.on('error', (e) => resolve({ error: e.message }));
+          searchReq.setTimeout(6000, () => { searchReq.destroy(); resolve({ error: 'Search service timeout — is it running?' }); });
+        });
+        json(searchResult);
+
+      // ── DOM interaction ──────────────────────────────────────────────────────
+      } else if (pathname === '/api/find') {
+        if (!targetTab) return notab();
+        const selector = data.selector || u.searchParams.get('selector') || '';
+        if (!selector) return json({ error: 'Missing selector' }, 400);
+        const attrs   = Array.isArray(data.attrs) ? data.attrs : [];
+        const findLim = parseInt(data.limit || u.searchParams.get('limit') || '50', 10);
+        const results = await targetTab.view.webContents.executeJavaScript(`
+          (() => {
+            const sel   = ${JSON.stringify(selector)};
+            const attrs = ${JSON.stringify(attrs)};
+            const lim   = ${findLim};
+            let els;
+            try { els = Array.from(document.querySelectorAll(sel)).slice(0, lim); }
+            catch (e) { return { error: e.message }; }
+            return els.map(el => {
+              const obj = {
+                tag:   el.tagName.toLowerCase(),
+                id:    el.id || null,
+                class: el.className || null,
+                text:  (el.innerText || el.textContent || '').trim().slice(0, 2000),
+                html:  el.innerHTML.slice(0, 4000),
+                value: el.value !== undefined ? el.value : null,
+                href:  el.href || null,
+                src:   el.src  || null,
+              };
+              for (const a of attrs) obj[a] = el.getAttribute(a);
+              return obj;
+            });
+          })()
+        `);
+        if (results && results.error) return json(results, 400);
+        json({ results, count: results.length });
+
+      } else if (pathname === '/api/click') {
+        if (!targetTab) return notab();
+        const { selector: clickSel } = data;
+        if (!clickSel) return json({ error: 'Missing selector' }, 400);
+        const clickResult = await targetTab.view.webContents.executeJavaScript(`
+          (() => {
+            const el = document.querySelector(${JSON.stringify(clickSel)});
+            if (!el) return { error: 'Element not found: ' + ${JSON.stringify(clickSel)} };
+            el.scrollIntoView({ block: 'center' });
+            el.click();
+            return {
+              ok:   true,
+              tag:  el.tagName.toLowerCase(),
+              id:   el.id || null,
+              text: (el.innerText || '').trim().slice(0, 100),
+            };
+          })()
+        `);
+        json(clickResult.error ? { ...clickResult } : clickResult, clickResult.error ? 404 : 200);
+
+      } else if (pathname === '/api/type') {
+        if (!targetTab) return notab();
+        const { selector: typeSel, text: typeText = '', clear = false } = data;
+        if (!typeSel) return json({ error: 'Missing selector' }, 400);
+        const typeResult = await targetTab.view.webContents.executeJavaScript(`
+          (() => {
+            const el = document.querySelector(${JSON.stringify(typeSel)});
+            if (!el) return { error: 'Element not found: ' + ${JSON.stringify(typeSel)} };
+            el.focus();
+            const doAppend = !${!!clear};
+            const newVal   = doAppend ? ((el.value || '') + ${JSON.stringify(typeText)}) : ${JSON.stringify(typeText)};
+            const ivSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype,  'value');
+            const tvSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype,'value');
+            const setter   = ivSetter || tvSetter;
+            if (setter) { setter.set.call(el, newVal); } else { el.value = newVal; }
+            el.dispatchEvent(new Event('input',  { bubbles: true }));
+            el.dispatchEvent(new Event('change', { bubbles: true }));
+            return { ok: true, value: el.value };
+          })()
+        `);
+        json(typeResult.error ? typeResult : typeResult, typeResult.error ? 404 : 200);
+
+      } else if (pathname === '/api/scroll') {
+        if (!targetTab) return notab();
+        const { selector: scrollSel, x = 0, y = 0, behavior = 'smooth' } = data;
+        const scrollResult = await targetTab.view.webContents.executeJavaScript(`
+          (() => {
+            const sel = ${JSON.stringify(scrollSel || null)};
+            if (sel) {
+              const el = document.querySelector(sel);
+              if (!el) return { error: 'Element not found: ' + sel };
+              el.scrollIntoView({ behavior: ${JSON.stringify(behavior)}, block: 'center' });
+              return { ok: true, scrolledTo: sel };
+            }
+            window.scrollTo({ top: ${Number(y)}, left: ${Number(x)}, behavior: ${JSON.stringify(behavior)} });
+            return { ok: true, x: ${Number(x)}, y: ${Number(y)} };
+          })()
+        `);
+        json(scrollResult.error ? scrollResult : scrollResult, scrollResult.error ? 404 : 200);
+
+      } else if (pathname === '/api/wait') {
+        if (!targetTab) return notab();
+        const { selector: waitSel, timeout: waitMs = 10000 } = data;
+        if (!waitSel) return json({ error: 'Missing selector' }, 400);
+        const safeMs     = Math.min(Number(waitMs) || 10000, 30000);
+        const waitResult = await targetTab.view.webContents.executeJavaScript(`
+          new Promise((resolve) => {
+            const sel = ${JSON.stringify(waitSel)};
+            const el  = document.querySelector(sel);
+            if (el) { resolve({ ok: true, found: true, selector: sel }); return; }
+            const obs = new MutationObserver(() => {
+              const found = document.querySelector(sel);
+              if (found) { obs.disconnect(); resolve({ ok: true, found: true, selector: sel }); }
+            });
+            obs.observe(document.documentElement, { childList: true, subtree: true, attributes: true });
+            setTimeout(() => { obs.disconnect(); resolve({ ok: false, found: false, selector: sel, error: 'Timeout' }); }, ${safeMs});
+          })
+        `);
+        json(waitResult);
+
+      // ── Cookies ──────────────────────────────────────────────────────────────
+      } else if (pathname === '/api/cookies') {
+        if (!targetTab) return notab();
+        const tabUrl = targetTab.view.webContents.getURL();
+
+        if (req.method === 'GET') {
+          const filter = u.searchParams.get('name') ? { url: tabUrl, name: u.searchParams.get('name') } : { url: tabUrl };
+          const cookies = await targetTab.view.webContents.session.cookies.get(filter);
+          json({ cookies, count: cookies.length });
+
+        } else if (req.method === 'POST') {
+          const cookieUrl = data.url || tabUrl;
+          if (!cookieUrl) return json({ error: 'No URL for cookie — navigate to a page first or pass url in body' }, 400);
+          await targetTab.view.webContents.session.cookies.set({ url: cookieUrl, ...data });
+          await targetTab.view.webContents.session.cookies.flushStore();
+          json({ ok: true });
+
+        } else if (req.method === 'DELETE') {
+          const existing = await targetTab.view.webContents.session.cookies.get({ url: tabUrl });
+          const nameFilter = data.name || u.searchParams.get('name');
+          const targets = nameFilter ? existing.filter(c => c.name === nameFilter) : existing;
+          for (const c of targets) {
+            await targetTab.view.webContents.session.cookies.remove(tabUrl, c.name);
+          }
+          json({ ok: true, removed: targets.length });
+
+        } else {
+          json({ error: 'Use GET, POST, or DELETE for /api/cookies' }, 405);
+        }
+
+      // ── Storage ──────────────────────────────────────────────────────────────
+      } else if (pathname === '/api/storage') {
+        if (!targetTab) return notab();
+        const storage = await targetTab.view.webContents.executeJavaScript(`
+          (() => {
+            const read = (store) => {
+              const obj = {};
+              try { for (let i = 0; i < store.length; i++) { const k = store.key(i); obj[k] = store.getItem(k); } } catch (_) {}
+              return obj;
+            };
+            return { localStorage: read(localStorage), sessionStorage: read(sessionStorage) };
+          })()
+        `);
+        json(storage);
+
       } else {
-        json({ error: 'Unknown endpoint. See README for API docs.' }, 404);
+        json({ error: 'Unknown endpoint', hint: 'GET /api/status lists all endpoints' }, 404);
       }
     } catch (err) {
       json({ error: err.message }, 500);
